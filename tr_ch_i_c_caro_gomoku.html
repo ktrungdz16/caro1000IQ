@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Cờ Caro Hiện Đại - Gomoku Pro</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .board-cell {
+      position: relative;
+      transition: background-color 0.15s ease, transform 0.1s ease;
+    }
+    .board-cell::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background-color: rgba(255, 255, 255, 0.12);
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    .board-cell::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background-color: rgba(255, 255, 255, 0.12);
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    /* Border adjustments for grid corners */
+    .board-cell[data-r="0"]::after { top: 50%; }
+    .board-cell[data-r="14"]::after { bottom: 50%; }
+    .board-cell[data-c="0"]::before { left: 50%; }
+    .board-cell[data-c="14"]::before { right: 50%; }
+
+    /* Tengen and Star points */
+    .star-point::after {
+      content: '';
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1;
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0.2); opacity: 0; }
+      70% { transform: scale(1.15); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .piece-animate {
+      animation: popIn 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+    @keyframes winPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(245, 158, 11, 0.8); }
+      50% { transform: scale(1.12); box-shadow: 0 0 25px rgba(245, 158, 11, 1); }
+    }
+    .win-cell {
+      animation: winPulse 1.2s infinite ease-in-out;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-3 sm:p-6 antialiased selection:bg-rose-500 selection:text-white">
+
+  <header class="w-full max-w-xl mx-auto flex flex-col items-center gap-3">
+    <div class="flex items-center justify-between w-full">
+      <div class="flex items-center gap-2">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-600 to-indigo-600 flex items-center justify-center font-black text-xl shadow-lg shadow-rose-950/40">
+          #
+        </div>
+        <div>
+          <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-slate-400">Cờ Caro Pro</h1>
+          <p class="text-[11px] sm:text-xs text-slate-400 font-medium">Bàn cờ 15×15 • 5 quân liên tiếp thắng</p>
+        </div>
+      </div>
+      
+      <!-- Sound & Settings Buttons -->
+      <div class="flex items-center gap-1.5">
+        <button id="soundToggle" class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition active:scale-95" title="Bật/Tắt âm thanh">
+          <svg id="soundIconOn" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+          <svg id="soundIconOff" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mode Selector & Controls -->
+    <div class="w-full bg-slate-900/90 border border-slate-800/80 p-1.5 rounded-2xl flex items-center justify-between text-xs font-semibold backdrop-blur-sm">
+      <div class="flex items-center gap-1">
+        <button id="modePvP" class="px-3.5 py-1.5 rounded-xl transition duration-150 flex items-center gap-1.5 bg-rose-600 text-white shadow-sm shadow-rose-900/40">
+          <span>👥 2 Người (PvP)</span>
+        </button>
+        <button id="modeAI" class="px-3.5 py-1.5 rounded-xl transition duration-150 flex items-center gap-1.5 text-slate-400 hover:text-slate-200">
+          <span>🤖 Đấu với Máy</span>
+        </button>
+      </div>
+      <div id="aiLevelContainer" class="hidden pr-2">
+        <select id="aiLevel" class="bg-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1 border border-slate-700 outline-none focus:ring-1 focus:ring-rose-500">
+          <option value="hard">Cấp: Thông minh</option>
+          <option value="normal">Cấp: Bình thường</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2 w-full text-center">
+      <!-- Player X Card -->
+      <div id="cardX" class="bg-slate-900/80 border-2 border-rose-500/80 rounded-2xl p-2.5 flex flex-col items-center justify-center transition-all duration-200 shadow-lg shadow-rose-950/20">
+        <div class="flex items-center gap-1.5">
+          <span class="w-5 h-5 rounded-md bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-sm">✕</span>
+          <span class="text-xs font-bold text-slate-200" id="labelPlayerX">Người chơi X</span>
+        </div>
+        <div class="text-lg font-black text-rose-400 mt-0.5" id="scoreX">0</div>
+      </div>
+
+      <!-- Turn Status Card -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-2.5 flex flex-col items-center justify-center">
+        <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Lượt đi</span>
+        <div id="turnBadge" class="mt-1 flex items-center gap-1.5 text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40">
+          <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+          <span id="turnText">Lượt X</span>
+        </div>
+      </div>
+
+      <!-- Player O Card -->
+      <div id="cardO" class="bg-slate-900/80 border-2 border-transparent rounded-2xl p-2.5 flex flex-col items-center justify-center transition-all duration-200">
+        <div class="flex items-center gap-1.5">
+          <span class="w-5 h-5 rounded-md bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-sm">◯</span>
+          <span class="text-xs font-bold text-slate-200" id="labelPlayerO">Người chơi O</span>
+        </div>
+        <div class="text-lg font-black text-sky-400 mt-0.5" id="scoreO">0</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="w-full flex-1 flex flex-col items-center justify-center my-3 max-w-xl">
+    <div class="relative w-full aspect-square max-w-[min(94vw,520px)] max-h-[min(94vw,520px)] bg-slate-900/90 rounded-2xl p-1.5 sm:p-2.5 border border-slate-800 shadow-2xl shadow-black/80 flex flex-col">
+      <!-- 15x15 Grid Container -->
+      <div id="board" class="w-full h-full grid grid-cols-[repeat(15,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] bg-slate-950/70 rounded-xl overflow-hidden border border-slate-800/80 cursor-pointer">
+        <!-- Cells generated via JavaScript -->
+      </div>
+    </div>
+  </main>
+
+  <footer class="w-full max-w-xl mx-auto flex items-center justify-center gap-3 pb-2">
+    <button id="btnUndo" class="flex-1 py-2.5 px-4 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2M3 10l6 6m-6-6l6-6"/></svg>
+      <span>Đi lại (Undo)</span>
+    </button>
+    <button id="btnRestart" class="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/40 transition active:scale-95">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      <span>Ván mới</span>
+    </button>
+  </footer>
+
+  <div id="winModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-300">
+    <div class="bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl transform scale-90 transition-transform duration-300" id="modalCard">
+      <div id="winnerIconBadge" class="w-20 h-20 rounded-full mx-auto flex items-center justify-center text-4xl shadow-inner mb-4 bg-rose-500/20 text-rose-400 border-2 border-rose-500">
+        ✕
+      </div>
+      <h2 id="winnerText" class="text-2xl font-black text-white tracking-tight">Người chơi X Chiến Thắng!</h2>
+      <p id="winnerSubtext" class="text-xs sm:text-sm text-slate-400 mt-2 font-medium">Xuất sắc nối 5 quân cờ liên tiếp thành công.</p>
+      
+      <div class="mt-6 flex flex-col gap-2">
+        <button id="btnModalPlayAgain" class="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-bold text-sm shadow-lg shadow-indigo-900/50 transition active:scale-95">
+          Tiếp tục ván mới
+        </button>
+        <button id="btnModalClose" class="w-full py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition">
+          Xem lại bàn cờ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const BOARD_SIZE = 15;
+    const EMPTY = 0;
+    const PLAYER_X = 1;
+    const PLAYER_O = 2;
+
+    let boardState = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
+    let currentPlayer = PLAYER_X;
+    let gameMode = 'pvp'; // 'pvp' | 'ai'
+    let isGameOver = false;
+    let isAiThinking = false;
+    let moveHistory = [];
+    let winningLine = [];
+    let score = { X: 0, O: 0 };
+    let soundEnabled = true;
+
+    // Star points for standard Gomoku board (15x15)
+    const starCoords = new Set(['3,3', '3,11', '7,7', '11,3', '11,11']);
+
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function playTone(freq, duration, type = 'sine', gainVal = 0.15) {
+      if (!soundEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new AudioContext();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+        gainNode.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {
+        // Fallback silently if audio blocked
+      }
+    }
+
+    function soundPlace() {
+      playTone(currentPlayer === PLAYER_X ? 520 : 680, 0.12, 'triangle', 0.18);
+    }
+    function soundWin() {
+      playTone(523.25, 0.18, 'sine', 0.2);
+      setTimeout(() => playTone(659.25, 0.2, 'sine', 0.2), 120);
+      setTimeout(() => playTone(783.99, 0.35, 'sine', 0.25), 260);
+      setTimeout(() => playTone(1046.50, 0.5, 'triangle', 0.3), 420);
+    }
+    function soundUndo() {
+      playTone(340, 0.1, 'sine', 0.12);
+    }
+
+    const boardEl = document.getElementById('board');
+
+    function createBoardDOM() {
+      boardEl.innerHTML = '';
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'board-cell flex items-center justify-center relative select-none';
+          cell.dataset.r = r;
+          cell.dataset.c = c;
+
+          if (starCoords.has(`${r},${c}`)) {
+            cell.classList.add('star-point');
+          }
+
+          cell.addEventListener('click', () => handleCellClick(r, c));
+          boardEl.appendChild(cell);
+        }
+      }
+    }
+
+    function handleCellClick(r, c) {
+      if (isGameOver || isAiThinking) return;
+      if (boardState[r][c] !== EMPTY) return;
+
+      makeMove(r, c);
+
+      // Trigger AI turn if enabled
+      if (!isGameOver && gameMode === 'ai' && currentPlayer === PLAYER_O) {
+        isAiThinking = true;
+        updateUI();
+        setTimeout(() => {
+          makeAIMove();
+          isAiThinking = false;
+          updateUI();
+        }, 180);
+      }
+    }
+
+    function makeMove(r, c) {
+      boardState[r][c] = currentPlayer;
+      moveHistory.push({ r, c, player: currentPlayer });
+      soundPlace();
+
+      const winResult = checkWin(r, c, currentPlayer);
+      if (winResult) {
+        isGameOver = true;
+        winningLine = winResult;
+        if (currentPlayer === PLAYER_X) score.X++;
+        else score.O++;
+        soundWin();
+        renderStones();
+        updateUI();
+        setTimeout(() => showWinnerModal(currentPlayer), 400);
+        return;
+      }
+
+      if (moveHistory.length === BOARD_SIZE * BOARD_SIZE) {
+        isGameOver = true;
+        updateUI();
+        setTimeout(() => showWinnerModal(0), 300);
+        return;
+      }
+
+      currentPlayer = (currentPlayer === PLAYER_X) ? PLAYER_O : PLAYER_X;
+      renderStones();
+      updateUI();
+    }
+
+    function renderStones() {
+      const cells = boardEl.children;
+      const lastMove = moveHistory[moveHistory.length - 1];
+
+      for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        const r = parseInt(cell.dataset.r);
+        const c = parseInt(cell.dataset.c);
+        const val = boardState[r][c];
+
+        cell.innerHTML = '';
+        cell.classList.remove('win-cell');
+
+        if (val !== EMPTY) {
+          const piece = document.createElement('div');
+          const isLast = lastMove && lastMove.r === r && lastMove.c === c;
+          const isWinningPiece = winningLine.some(([wr, wc]) => wr === r && wc === c);
+
+          piece.className = 'w-[82%] h-[82%] rounded-full flex items-center justify-center font-black relative piece-animate shadow-md z-10';
+
+          if (val === PLAYER_X) {
+            // Elegant modern Red/Rose X
+            piece.className += ' bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-rose-950/60';
+            piece.innerHTML = `
+              <svg class="w-[60%] h-[60%]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>`;
+          } else {
+            // Radiant Cyan/Sky O
+            piece.className += ' bg-gradient-to-br from-cyan-400 to-sky-600 text-white shadow-cyan-950/60';
+            piece.innerHTML = `
+              <svg class="w-[60%] h-[60%]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5">
+                <circle cx="12" cy="12" r="7.5"></circle>
+              </svg>`;
+          }
+
+          // Last move indicator dot
+          if (isLast && !isWinningPiece) {
+            const dot = document.createElement('div');
+            dot.className = 'absolute w-2 h-2 rounded-full bg-white shadow-sm pointer-events-none ring-2 ring-black/30';
+            piece.appendChild(dot);
+          }
+
+          // Winning highlight
+          if (isWinningPiece) {
+            cell.classList.add('win-cell');
+            piece.classList.add('ring-2', 'ring-amber-300', 'ring-offset-2', 'ring-offset-slate-900');
+          }
+
+          cell.appendChild(piece);
+        }
+      }
+    }
+
+    const DIRECTIONS = [
+      [ [0, 1], [0, -1] ],  // Horizontal
+      [ [1, 0], [-1, 0] ],  // Vertical
+      [ [1, 1], [-1, -1] ], // Main diagonal
+      [ [1, -1], [-1, 1] ]  // Anti diagonal
+    ];
+
+    function checkWin(r, c, player) {
+      for (const dirPair of DIRECTIONS) {
+        let line = [[r, c]];
+
+        for (const [dr, dc] of dirPair) {
+          let currR = r + dr;
+          let currC = c + dc;
+          while (
+            currR >= 0 && currR < BOARD_SIZE &&
+            currC >= 0 && currC < BOARD_SIZE &&
+            boardState[currR][currC] === player
+          ) {
+            line.push([currR, currC]);
+            currR += dr;
+            currC += dc;
+          }
+        }
+
+        if (line.length >= 5) {
+          return line;
+        }
+      }
+      return null;
+    }
+
+    function evaluateCellScore(r, c, player, opponent) {
+      let totalScore = 0;
+
+      for (const dirPair of DIRECTIONS) {
+        // Evaluate offensive potential
+        totalScore += evaluateDirection(r, c, dirPair, player, opponent) * 1.0;
+        // Evaluate defensive block potential
+        totalScore += evaluateDirection(r, c, dirPair, opponent, player) * 1.15;
+      }
+
+      // Preference toward center of the board
+      const centerDist = Math.abs(r - 7) + Math.abs(c - 7);
+      totalScore += (14 - centerDist) * 3;
+
+      return totalScore;
+    }
+
+    function evaluateDirection(r, c, dirPair, player, opponent) {
+      let count = 1;
+      let openEnds = 0;
+
+      for (const [dr, dc] of dirPair) {
+        let step = 1;
+        while (true) {
+          const nr = r + dr * step;
+          const nc = c + dc * step;
+
+          if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) break;
+
+          if (boardState[nr][nc] === player) {
+            count++;
+            step++;
+          } else if (boardState[nr][nc] === EMPTY) {
+            openEnds++;
+            break;
+          } else {
+            break; // Blocked by opponent
+          }
+        }
+      }
+
+      // Pattern valuation table
+      if (count >= 5) return 200000;
+      if (count === 4) {
+        if (openEnds === 2) return 25000;
+        if (openEnds === 1) return 6000;
+      }
+      if (count === 3) {
+        if (openEnds === 2) return 4000;
+        if (openEnds === 1) return 800;
+      }
+      if (count === 2) {
+        if (openEnds === 2) return 500;
+        if (openEnds === 1) return 70;
+      }
+      if (count === 1 && openEnds === 2) return 20;
+
+      return 0;
+    }
+
+    function makeAIMove() {
+      if (isGameOver) return;
+
+      // First move optimization: play center or near center
+      if (moveHistory.length === 1) {
+        const first = moveHistory[0];
+        const offset = [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, -1]][Math.floor(Math.random() * 6)];
+        const targetR = Math.max(0, Math.min(BOARD_SIZE - 1, first.r + offset[0]));
+        const targetC = Math.max(0, Math.min(BOARD_SIZE - 1, first.c + offset[1]));
+        if (boardState[targetR][targetC] === EMPTY) {
+          makeMove(targetR, targetC);
+          return;
+        }
+      }
+
+      let bestScore = -Infinity;
+      let candidates = [];
+      const aiLevel = document.getElementById('aiLevel').value;
+
+      // Only evaluate cells within distance 2 of existing stones
+      const hasAdjacentStone = (r, c) => {
+        for (let dr = -2; dr <= 2; dr++) {
+          for (let dc = -2; dc <= 2; dc++) {
+            const nr = r + dr;
+            const nc = c + dc;
+            if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
+              if (boardState[nr][nc] !== EMPTY) return true;
+            }
+          }
+        }
+        return false;
+      };
+
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          if (boardState[r][c] !== EMPTY) continue;
+          if (moveHistory.length > 0 && !hasAdjacentStone(r, c)) continue;
+
+          let score = evaluateCellScore(r, c, PLAYER_O, PLAYER_X);
+
+          // Add minor noise for normal difficulty
+          if (aiLevel === 'normal') {
+            score += (Math.random() - 0.5) * 400;
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            candidates = [{ r, c }];
+          } else if (score === bestScore) {
+            candidates.push({ r, c });
+          }
+        }
+      }
+
+      if (candidates.length > 0) {
+        const choice = candidates[Math.floor(Math.random() * candidates.length)];
+        makeMove(choice.r, choice.c);
+      }
+    }
+
+    function updateUI() {
+      document.getElementById('scoreX').textContent = score.X;
+      document.getElementById('scoreO').textContent = score.O;
+
+      const cardX = document.getElementById('cardX');
+      const cardO = document.getElementById('cardO');
+      const turnBadge = document.getElementById('turnBadge');
+      const turnText = document.getElementById('turnText');
+      const btnUndo = document.getElementById('btnUndo');
+
+      btnUndo.disabled = moveHistory.length === 0 || isGameOver || isAiThinking;
+
+      if (isAiThinking) {
+        turnBadge.className = 'mt-1 flex items-center gap-1.5 text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/40';
+        turnText.textContent = 'Máy đang nghĩ...';
+        cardX.classList.replace('border-rose-500/80', 'border-transparent');
+        cardO.classList.add('border-sky-500/80');
+        return;
+      }
+
+      if (currentPlayer === PLAYER_X) {
+        cardX.classList.remove('border-transparent');
+        cardX.classList.add('border-rose-500/80', 'shadow-rose-950/40');
+        cardO.classList.replace('border-sky-500/80', 'border-transparent');
+        cardO.classList.remove('shadow-sky-950/40');
+
+        turnBadge.className = 'mt-1 flex items-center gap-1.5 text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40';
+        turnText.textContent = 'Lượt X';
+      } else {
+        cardO.classList.remove('border-transparent');
+        cardO.classList.add('border-sky-500/80', 'shadow-sky-950/40');
+        cardX.classList.replace('border-rose-500/80', 'border-transparent');
+        cardX.classList.remove('shadow-rose-950/40');
+
+        turnBadge.className = 'mt-1 flex items-center gap-1.5 text-xs font-bold px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/40';
+        turnText.textContent = gameMode === 'ai' ? 'Lượt Máy (O)' : 'Lượt O';
+      }
+    }
+
+    function undoMove() {
+      if (moveHistory.length === 0 || isGameOver || isAiThinking) return;
+
+      // In AI mode, undo both AI and Player moves
+      const stepsToUndo = (gameMode === 'ai' && moveHistory.length >= 2) ? 2 : 1;
+
+      for (let i = 0; i < stepsToUndo; i++) {
+        const last = moveHistory.pop();
+        if (last) {
+          boardState[last.r][last.c] = EMPTY;
+        }
+      }
+
+      soundUndo();
+      currentPlayer = moveHistory.length % 2 === 0 ? PLAYER_X : PLAYER_O;
+      winningLine = [];
+      renderStones();
+      updateUI();
+    }
+
+    function resetGame(keepScore = true) {
+      boardState = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
+      moveHistory = [];
+      winningLine = [];
+      currentPlayer = PLAYER_X;
+      isGameOver = false;
+      isAiThinking = false;
+
+      if (!keepScore) {
+        score = { X: 0, O: 0 };
+      }
+
+      closeModal();
+      renderStones();
+      updateUI();
+    }
+
+    const winModal = document.getElementById('winModal');
+    const modalCard = document.getElementById('modalCard');
+    const winnerIconBadge = document.getElementById('winnerIconBadge');
+    const winnerText = document.getElementById('winnerText');
+    const winnerSubtext = document.getElementById('winnerSubtext');
+
+    function showWinnerModal(winner) {
+      if (winner === PLAYER_X) {
+        winnerIconBadge.className = 'w-20 h-20 rounded-full mx-auto flex items-center justify-center text-4xl shadow-inner mb-4 bg-rose-500/20 text-rose-400 border-2 border-rose-500';
+        winnerIconBadge.textContent = '✕';
+        winnerText.textContent = 'Người chơi X Chiến Thắng!';
+        winnerSubtext.textContent = 'Đã hoàn thành xuất sắc 5 quân thẳng hàng!';
+      } else if (winner === PLAYER_O) {
+        winnerIconBadge.className = 'w-20 h-20 rounded-full mx-auto flex items-center justify-center text-4xl shadow-inner mb-4 bg-sky-500/20 text-sky-400 border-2 border-sky-500';
+        winnerIconBadge.textContent = '◯';
+        winnerText.textContent = (gameMode === 'ai') ? 'Máy (O) Đã Chiến Thắng!' : 'Người chơi O Chiến Thắng!';
+        winnerSubtext.textContent = 'Thế cờ đỉnh cao và giành trọn chiến thắng!';
+      } else {
+        winnerIconBadge.className = 'w-20 h-20 rounded-full mx-auto flex items-center justify-center text-4xl shadow-inner mb-4 bg-amber-500/20 text-amber-400 border-2 border-amber-500';
+        winnerIconBadge.textContent = '🤝';
+        winnerText.textContent = 'Ván Cờ Hòa!';
+        winnerSubtext.textContent = 'Hai bên ngang tài ngang sức trên toàn bàn cờ.';
+      }
+
+      winModal.classList.remove('opacity-0', 'pointer-events-none');
+      modalCard.classList.remove('scale-90');
+      modalCard.classList.add('scale-100');
+    }
+
+    function closeModal() {
+      winModal.classList.add('opacity-0', 'pointer-events-none');
+      modalCard.classList.remove('scale-100');
+      modalCard.classList.add('scale-90');
+    }
+
+    document.getElementById('btnRestart').addEventListener('click', () => resetGame(true));
+    document.getElementById('btnUndo').addEventListener('click', undoMove);
+    document.getElementById('btnModalPlayAgain').addEventListener('click', () => resetGame(true));
+    document.getElementById('btnModalClose').addEventListener('click', closeModal);
+
+    // Mode Toggle
+    const modePvPBtn = document.getElementById('modePvP');
+    const modeAIBtn = document.getElementById('modeAI');
+    const aiLevelContainer = document.getElementById('aiLevelContainer');
+    const labelPlayerO = document.getElementById('labelPlayerO');
+
+    modePvPBtn.addEventListener('click', () => {
+      if (gameMode === 'pvp') return;
+      gameMode = 'pvp';
+      modePvPBtn.className = 'px-3.5 py-1.5 rounded-xl transition duration-150 flex items-center gap-1.5 bg-rose-600 text-white shadow-sm shadow-rose-900/40';
+      modeAIBtn.className = 'px-3.5 py-1.5 rounded-xl transition duration-150 flex items-center gap-1.5 text-slate-400 hover:text-slate-200';
+      aiLevelContainer.classList.add('hidden');
+      labelPlayerO.textContent = 'Người chơi O';
+      resetGame(false);
+    });
+
+    modeAIBtn.addEventListener('click', () => {
+      if (gameMode === 'ai') return;
+      gameMode = 'ai';
+      modeAIBtn.className = 'px-3.5 py-1.5 rounded-xl transition duration-150 flex items-center gap-1.5 bg-indigo-600 text-white shadow-sm shadow-indigo-900/40';
+      modePvPBtn.className = 'px-3.5 py-1.5 rounded-xl transition duration-150 flex items-center gap-1.5 text-slate-400 hover:text-slate-200';
+      aiLevelContainer.classList.remove('hidden');
+      labelPlayerO.textContent = 'Máy (AI)';
+      resetGame(false);
+    });
+
+    // Sound toggle
+    const soundToggle = document.getElementById('soundToggle');
+    const soundIconOn = document.getElementById('soundIconOn');
+    const soundIconOff = document.getElementById('soundIconOff');
+
+    soundToggle.addEventListener('click', () => {
+      soundEnabled = !soundEnabled;
+      soundIconOn.classList.toggle('hidden', !soundEnabled);
+      soundIconOff.classList.toggle('hidden', soundEnabled);
+    });
+
+    // Initialize application
+    window.onload = function() {
+      createBoardDOM();
+      resetGame(false);
+    };
+  </script>
+</body>
+</html>
